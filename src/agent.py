@@ -1,17 +1,10 @@
 import anthropic
 import math
-from dotenv import load_dotenv
 import os
 import requests
 
-# Load .env file at startup
-load_dotenv()
-API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-if not API_KEY:
-    raise EnvironmentError("ANTHROPIC_API_KEY not found. Check your .env file.")
-
-client = anthropic.Anthropic(api_key=API_KEY)
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # --- Tool definitions ---
 
