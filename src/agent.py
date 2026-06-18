@@ -1,10 +1,10 @@
 import anthropic
 import math
-import os
 import requests
+import streamlit as st
 
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
 
 # --- Tool definitions ---
 
