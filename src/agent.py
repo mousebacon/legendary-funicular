@@ -24,7 +24,7 @@ tools = [
             "required": ["expression"]
         }
     },
-{
+    {
         "name": "get_weather",
         "description": "Returns the current weather forecast for a US city using Weather.gov.",
         "input_schema": {
@@ -40,10 +40,9 @@ tools = [
     }
 ]
 
+# --- Weather helpers ---
 
-# weather.gov API calls
 def get_coordinates(city):
-    """Convert a city name to lat/lon using Open-Meteo's geocoding API."""
     url = "https://geocoding-api.open-meteo.com/v1/search"
     params = {"name": city, "count": 1, "language": "en", "format": "json"}
     response = requests.get(url, params=params, timeout=10)
@@ -53,31 +52,23 @@ def get_coordinates(city):
     return results[0]["latitude"], results[0]["longitude"]
 
 def get_weather(city):
-    """Fetch a forecast from Weather.gov for the given city."""
     lat, lon = get_coordinates(city)
     if lat is None:
         return f"Couldn't find coordinates for '{city}'."
-
-    # Step 1: get the forecast office and grid coordinates for this location
     points_url = f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}"
     headers = {"User-Agent": "simple-agent-demo (your@email.com)"}
     points_resp = requests.get(points_url, headers=headers, timeout=10)
     if points_resp.status_code != 200:
         return f"Weather.gov couldn't find a forecast for '{city}' (may be outside the US)."
-
     forecast_url = points_resp.json()["properties"]["forecast"]
-
-    # Step 2: fetch the actual forecast
     forecast_resp = requests.get(forecast_url, headers=headers, timeout=10)
     periods = forecast_resp.json()["properties"]["periods"]
-
-    # Return the next two periods (e.g. "This Afternoon" and "Tonight")
     summary = []
     for period in periods[:2]:
         summary.append(f"{period['name']}: {period['detailedForecast']}")
     return "\n".join(summary)
 
-# --- Tool implementations ---
+# --- Tool runner ---
 
 def run_tool(name, inputs):
     if name == "calculate":
@@ -87,62 +78,67 @@ def run_tool(name, inputs):
             return str(result)
         except Exception as e:
             return f"Error: {e}"
-
     elif name == "get_weather":
         return get_weather(inputs["city"])
-
     return "Unknown tool."
 
-# --- The agent loop ---
-# messages lives here now, outside the function, so it persists across turns
-
-messages = []
+# --- Agent loop ---
+# Returns the assistant's final text response as a string
 
 def run_agent(user_message):
-    messages.append({"role": "user", "content": user_message})
+    st.session_state.messages.append({"role": "user", "content": user_message})
 
     while True:
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             tools=tools,
-            messages=messages
+            messages=st.session_state.messages
         )
 
         if response.stop_reason == "end_turn":
+            st.session_state.messages.append({"role": "assistant", "content": response.content})
             for block in response.content:
                 if hasattr(block, "text"):
-                    print(f"\nAgent: {block.text}\n")
-            # Add the assistant's final response to history
-            messages.append({"role": "assistant", "content": response.content})
-            break
+                    return block.text
+            return ""
 
         if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
-
+            st.session_state.messages.append({"role": "assistant", "content": response.content})
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
-                    print(f"  [Tool call: {block.name}({block.input})]")
                     result = run_tool(block.name, block.input)
-                    print(f"  [Tool result: {result}]")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": result
                     })
+            st.session_state.messages.append({"role": "user", "content": tool_results})
 
-            messages.append({"role": "user", "content": tool_results})
+# --- Streamlit UI ---
 
-# --- Interactive loop ---
+st.title("Simple Agent")
 
-print("Agent ready. Type 'quit' to exit.\n")
+# Initialize session state on first run
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "display" not in st.session_state:
+    st.session_state.display = []
 
-while True:
-    user_input = input("You: ").strip()
-    if not user_input:
-        continue
-    if user_input.lower() in ("quit", "exit"):
-        print("Goodbye.")
-        break
-    run_agent(user_input)
+# Render chat history
+for msg in st.session_state.display:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# Handle new input
+if prompt := st.chat_input("Ask me anything..."):
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.display.append({"role": "user", "content": prompt})
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            reply = run_agent(prompt)
+        st.markdown(reply)
+    st.session_state.display.append({"role": "assistant", "content": reply})
