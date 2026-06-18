@@ -3,8 +3,9 @@ import math
 import requests
 import streamlit as st
 
+API_KEY = st.secrets["ANTHROPIC_API_KEY"]
 
-client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+client = anthropic.Anthropic(api_key=API_KEY)
 
 # --- Tool definitions ---
 
